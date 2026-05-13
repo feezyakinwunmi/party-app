@@ -278,8 +278,10 @@ export default function TruthOrDarePage() {
         : questions[Math.floor(Math.random() * questions.length)];
 
       recent.add(chosen.id);
-      if (recent.size > 10) recent.delete([...recent][0]);
-      return chosen;
+if (recent.size > 10) {
+  const firstKey = Array.from(recent)[0];
+  recent.delete(firstKey);
+}      return chosen;
     }
 
     // Fallback - try any question except their own
