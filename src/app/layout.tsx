@@ -4,7 +4,6 @@ import "./globals.css";
 export const metadata: Metadata = {
   title:       "OXA — Party Games for Real Ones",
   description: "Truth or Dare, Letter Blitz, and more party games",
-  viewport:    "width=device-width, initial-scale=1, maximum-scale=1",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -1,4 +1,4 @@
-"use client";
+import { Suspense } from 'react';
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -19,7 +19,8 @@ const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
 type BlitzPhase = "idle" | "countdown" | "spinning" | "active" | "done";
 
-export default function LetterBlitzPage() {
+// Inner component that uses useSearchParams
+function LetterBlitzContent() {
   const router = useRouter();
   const params = useSearchParams();
   const code = params.get("code") || "";
@@ -115,7 +116,7 @@ export default function LetterBlitzPage() {
     setCategory(cat);
 
     let spins = 0;
-    const totalSpins = 28; // Fast & exciting
+    const totalSpins = 28;
 
     spinIntervalRef.current = setInterval(() => {
       spins++;
@@ -127,7 +128,7 @@ export default function LetterBlitzPage() {
         setLetter(finalLetter);
         startTimer();
       }
-    }, 40); // ← Very fast spinning (40ms)
+    }, 40);
   }
 
   // Start Timer
@@ -301,5 +302,21 @@ export default function LetterBlitzPage() {
         )}
       </div>
     </main>
+  );
+}
+
+// Main export with Suspense boundary
+export default function LetterBlitzPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0a0a0f] to-[#1a1a2e]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-neon-cyan mx-auto"></div>
+          <p className="mt-4 text-gray-400">Loading game...</p>
+        </div>
+      </div>
+    }>
+      <LetterBlitzContent />
+    </Suspense>
   );
 }

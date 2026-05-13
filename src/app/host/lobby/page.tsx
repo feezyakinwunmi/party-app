@@ -1,5 +1,4 @@
-"use client";
-
+import { Suspense } from 'react';
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
@@ -20,7 +19,8 @@ import {
   Trash2,
 } from "lucide-react";
 
-export default function HostLobbyPage() {
+// Inner component that uses useSearchParams
+function HostLobbyContent() {
   const router = useRouter();
   const params = useSearchParams();
   const code = params.get("code") || "";
@@ -358,5 +358,21 @@ export default function HostLobbyPage() {
         </div>
       )}
     </main>
+  );
+}
+
+// Main export with Suspense boundary
+export default function HostLobbyPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0a0a0f] to-[#1a1a2e]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-neon-cyan mx-auto"></div>
+          <p className="mt-4 text-gray-400">Loading lobby...</p>
+        </div>
+      </div>
+    }>
+      <HostLobbyContent />
+    </Suspense>
   );
 }

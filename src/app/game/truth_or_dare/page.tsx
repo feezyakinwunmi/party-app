@@ -1,5 +1,4 @@
-"use client";
-
+import { Suspense } from 'react';
 import { useEffect, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -208,7 +207,8 @@ function CardRevealModal({ turn, onDone, onRespin, isHost, onClose, currentStage
   );
 }
 
-export default function TruthOrDarePage() {
+// Inner component that uses useSearchParams
+function TruthOrDareContent() {
   const router = useRouter();
   const params = useSearchParams();
   const code = params.get("code") || "";
@@ -258,11 +258,9 @@ export default function TruthOrDarePage() {
     return picked;
   }
 
-  // Main Fix: Player does NOT get their own question
   async function getQuestion(stage: string, type: "truth" | "dare", currentPlayerId: string): Promise<Submission | null> {
     const recent = recentQuestionsRef.current;
 
-    // Try to get questions that are NOT from the current player
     const { data: questions } = await supabase
       .from("submissions")
       .select("*")
@@ -278,13 +276,13 @@ export default function TruthOrDarePage() {
         : questions[Math.floor(Math.random() * questions.length)];
 
       recent.add(chosen.id);
-if (recent.size > 10) {
-  const firstKey = Array.from(recent)[0];
-  recent.delete(firstKey);
-}      return chosen;
+      if (recent.size > 10) {
+        const firstKey = Array.from(recent)[0];
+        recent.delete(firstKey);
+      }
+      return chosen;
     }
 
-    // Fallback - try any question except their own
     const { data: fallback } = await supabase
       .from("submissions")
       .select("*")
@@ -538,5 +536,21 @@ if (recent.size > 10) {
         />
       )}
     </main>
+  );
+}
+
+// Main export with Suspense boundary
+export default function TruthOrDarePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#0a0a0f] to-[#13131f]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-neon-pink mx-auto"></div>
+          <p className="mt-4 text-gray-400">Loading game...</p>
+        </div>
+      </div>
+    }>
+      <TruthOrDareContent />
+    </Suspense>
   );
 }
