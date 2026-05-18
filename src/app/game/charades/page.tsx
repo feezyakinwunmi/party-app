@@ -1,5 +1,3 @@
-"use client";
-
 import { Suspense } from 'react';
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -35,7 +33,7 @@ const WORDS_BY_CATEGORY: Record<string, string[]> = {
 
 type GamePhase = "select" | "countdown" | "reveal" | "active" | "done";
 
-// Inner component that uses all hooks
+// Client component that uses all hooks
 function CharadesContent() {
   const router = useRouter();
   const [phase, setPhase] = useState<GamePhase>("select");
@@ -568,49 +566,50 @@ function CharadesContent() {
   );
 }
 
-// Add CSS animations
-const style = document.createElement('style');
-style.textContent = `
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(10px);
+// Add CSS animations (runs on client only)
+if (typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
-    to {
-      opacity: 1;
-      transform: translateY(0);
+    
+    @keyframes bounce {
+      0%, 100% {
+        transform: translateY(0);
+      }
+      50% {
+        transform: translateY(-20px);
+      }
     }
-  }
+    
+    .animate-fade-in {
+      animation: fadeIn 0.5s ease-out;
+    }
+    
+    .animate-bounce {
+      animation: bounce 1s ease-in-out infinite;
+    }
+  `;
   
-  @keyframes bounce {
-    0%, 100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-20px);
-    }
+  if (!document.querySelector('#charades-styles')) {
+    style.id = 'charades-styles';
+    document.head.appendChild(style);
   }
-  
-  .animate-fade-in {
-    animation: fadeIn 0.5s ease-out;
-  }
-  
-  .animate-bounce {
-    animation: bounce 1s ease-in-out infinite;
-  }
-`;
-
-// Only add style if not already added
-if (typeof document !== 'undefined' && !document.querySelector('#charades-styles')) {
-  style.id = 'charades-styles';
-  document.head.appendChild(style);
 }
 
-// Main export with Suspense boundary
+// Main export with Suspense boundary - NO "use client" here
 export default function CharadesPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#0a0a0f] to-[#13131f]">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0a0a0f] to-[#1a1a2e]">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-neon-pink mx-auto"></div>
           <p className="mt-4 text-gray-400">Loading game...</p>
