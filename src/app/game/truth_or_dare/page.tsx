@@ -20,7 +20,9 @@ import {
   Zap,
   Hash,
   Users,
-  Star
+  Star,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 
 type Phase = "spin" | "reveal";
@@ -119,7 +121,6 @@ function CardRevealModal({ turn, onDone, onRespin, isHost, onClose, currentStage
               transition: "transform 0.6s cubic-bezier(0.4, 0, 0.2, 1)",
               transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
             }}>
-              {/* Card back */}
               <div style={{
                 position: "absolute", inset: 0,
                 backfaceVisibility: "hidden",
@@ -141,7 +142,6 @@ function CardRevealModal({ turn, onDone, onRespin, isHost, onClose, currentStage
                 </p>
               </div>
 
-              {/* Card front */}
               <div style={{
                 position: "absolute", inset: 0,
                 backfaceVisibility: "hidden",
@@ -226,6 +226,8 @@ function TruthOrDareContent() {
   const [truthsUsed, setTruthsUsed] = useState<Record<string, number>>({});
   const [modalOpen, setModalOpen] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(0);
+  const playersPerPage = 12;
 
   const spinRef = useRef<HTMLDivElement>(null);
   const lastSpunPlayerRef = useRef<string | null>(null);
@@ -247,63 +249,125 @@ function TruthOrDareContent() {
 
   const activeModes = session?.rules?.modes?.length ? session.rules.modes : GAME_MODES.map((m) => m.key);
 
+  // Pagination for large player lists
+  const totalPages = Math.ceil(players.length / playersPerPage);
+  const paginatedPlayers = players.slice(
+    currentPage * playersPerPage,
+    (currentPage + 1) * playersPerPage
+  );
+
   function pickPlayer(exclude?: string): Player {
-    let pool = exclude ? players.filter((p) => p.id !== exclude) : players;
+    if (players.length === 0) throw new Error("No players available");
+    
+    let pool = exclude ? players.filter((p) => p.id !== exclude) : [...players];
+    
+    // Avoid picking the same person twice in a row if possible
     if (lastSpunPlayerRef.current && pool.length > 1) {
       pool = pool.filter((p) => p.id !== lastSpunPlayerRef.current);
     }
+    
+    // If pool is empty after filtering, use all players except excluded
     if (pool.length === 0) {
-      pool = exclude ? players.filter((p) => p.id !== exclude) : players;
+      pool = exclude ? players.filter((p) => p.id !== exclude) : [...players];
     }
-    const picked = pool[Math.floor(Math.random() * pool.length)];
+    
+    // Random selection with optional weighting (players with fewer spins get higher chance)
+    const minSpins = Math.min(...pool.map(p => p.spin_count || 0));
+    const weightedPool = pool.filter(p => (p.spin_count || 0) <= minSpins + 2);
+    const finalPool = weightedPool.length > 0 ? weightedPool : pool;
+    
+    const picked = finalPool[Math.floor(Math.random() * finalPool.length)];
     lastSpunPlayerRef.current = picked.id;
     return picked;
   }
 
   async function getQuestion(stage: string, type: "truth" | "dare", currentPlayerId: string): Promise<Submission | null> {
-    const recent = recentQuestionsRef.current;
+    try {
+      const recent = recentQuestionsRef.current;
 
-    const { data: questions } = await supabase
-      .from("submissions")
-      .select("*")
-      .eq("session_id", session!.id)
-      .eq("type", type)
-      .eq("mode", stage)
-      .neq("player_id", currentPlayerId);
+      // First try: get unused questions from current stage, not by current player
+      const { data: unusedQuestions, error: unusedError } = await supabase
+        .from("submissions")
+        .select("*")
+        .eq("session_id", session!.id)
+        .eq("type", type)
+        .eq("mode", stage)
+        .eq("used", false);
 
-    if (questions && questions.length > 0) {
-      const fresh = questions.filter(q => !recent.has(q.id));
-      const chosen = fresh.length > 0 
-        ? fresh[Math.floor(Math.random() * fresh.length)]
-        : questions[Math.floor(Math.random() * questions.length)];
-
-      recent.add(chosen.id);
-      if (recent.size > 10) {
-        const firstKey = Array.from(recent)[0];
-        recent.delete(firstKey);
+      if (unusedError) {
+        console.error("Error fetching unused questions:", unusedError);
       }
-      return chosen;
+
+      if (unusedQuestions && unusedQuestions.length > 0) {
+        // Filter out recently used questions
+        const fresh = unusedQuestions.filter(q => !recent.has(q.id));
+        const chosen = fresh.length > 0 
+          ? fresh[Math.floor(Math.random() * fresh.length)]
+          : unusedQuestions[Math.floor(Math.random() * unusedQuestions.length)];
+
+        if (chosen) {
+          recent.add(chosen.id);
+          // Keep recent set manageable (last 20 questions)
+          if (recent.size > 20) {
+            const firstKey = Array.from(recent)[0];
+            recent.delete(firstKey);
+          }
+          return chosen;
+        }
+      }
+
+      // Second try: get any questions from current stage (allow repeats)
+      const { data: stageQuestions, error: stageError } = await supabase
+        .from("submissions")
+        .select("*")
+        .eq("session_id", session!.id)
+        .eq("type", type)
+        .eq("mode", stage);
+
+      if (stageError) {
+        console.error("Error fetching stage questions:", stageError);
+      }
+
+      if (stageQuestions && stageQuestions.length > 0) {
+        const chosen = stageQuestions[Math.floor(Math.random() * stageQuestions.length)];
+        setWarning(`⚠️ No more unused ${type} questions for ${stage}! Reusing questions.`);
+        setTimeout(() => setWarning(null), 3000);
+        return chosen;
+      }
+
+      // Final fallback: any question of this type from any stage
+      const { data: anyQuestions, error: anyError } = await supabase
+        .from("submissions")
+        .select("*")
+        .eq("session_id", session!.id)
+        .eq("type", type);
+
+      if (anyError) {
+        console.error("Error fetching any questions:", anyError);
+      }
+
+      if (anyQuestions && anyQuestions.length > 0) {
+        const chosen = anyQuestions[Math.floor(Math.random() * anyQuestions.length)];
+        setWarning(`⚠️ No ${type} questions left for ${stage}! Using general questions.`);
+        setTimeout(() => setWarning(null), 3000);
+        return chosen;
+      }
+
+      return null;
+    } catch (error) {
+      console.error("Error in getQuestion:", error);
+      return null;
     }
-
-    const { data: fallback } = await supabase
-      .from("submissions")
-      .select("*")
-      .eq("session_id", session!.id)
-      .eq("type", type)
-      .neq("player_id", currentPlayerId);
-
-    if (fallback && fallback.length > 0) {
-      const chosen = fallback[Math.floor(Math.random() * fallback.length)];
-      setWarning(`⚠️ Using question from another level`);
-      setTimeout(() => setWarning(null), 2500);
-      return chosen;
-    }
-
-    return null;
   }
 
   async function doSpin(excludeId?: string) {
-    if (spinning || !session || players.length < 2) return;
+    if (spinning || !session || players.length < 2) {
+      if (players.length < 2) {
+        setWarning("Need at least 2 players to spin!");
+        setTimeout(() => setWarning(null), 2000);
+      }
+      return;
+    }
     
     setSpinning(true);
     setPhase("spin");
@@ -311,42 +375,60 @@ function TruthOrDareContent() {
     setModalOpen(false);
     setWarning(null);
 
-    const picked = pickPlayer(excludeId);
+    try {
+      const picked = pickPlayer(excludeId);
 
-    const extraSpins = 5 + Math.floor(Math.random() * 5);
-    const playerIndex = players.findIndex(p => p.id === picked.id);
-    const playerAngle = (playerIndex / players.length) * 360;
-    const totalDeg = bottleDeg + extraSpins * 360 + playerAngle;
-    setBottleDeg(totalDeg);
+      // Calculate rotation angle
+      const playerIndex = players.findIndex(p => p.id === picked.id);
+      const angleStep = 360 / players.length;
+      const targetAngle = (playerIndex * angleStep) + 90; // +90 to point at player
+      const extraSpins = 5 + Math.floor(Math.random() * 5);
+      const totalDeg = bottleDeg + (extraSpins * 360) + targetAngle;
+      
+      setBottleDeg(totalDeg);
 
-    setTimeout(async () => {
+      setTimeout(async () => {
+        try {
+          setSpinning(false);
+
+          const stage = activeModes[stageIdx] as GameMode ?? "starting";
+          const usedTruths = truthsUsed[picked.id] ?? 0;
+          const allowed = session.rules.truth_count ?? 2;
+          const forceType: "truth" | "dare" = usedTruths < allowed ? "truth" : "dare";
+
+          const sub = await getQuestion(stage, forceType, picked.id);
+          
+          if (!sub) {
+            setWarning("❌ Not enough questions available. Please add more questions in the admin panel.");
+            setPhase("spin");
+            return;
+          }
+
+          setTurn({ player: picked, submission: sub, type: sub.type as "truth" | "dare" });
+          setPhase("reveal");
+          setModalOpen(true);
+
+          // Update spin count asynchronously (don't await to avoid blocking)
+          supabase.from("players").update({ spin_count: (picked.spin_count ?? 0) + 1 }).eq("id", picked.id).then(() => {
+            setPlayers((prev) => prev.map((p) => p.id === picked.id ? { ...p, spin_count: (p.spin_count ?? 0) + 1 } : p));
+          });
+          
+          if (sub.type === "truth") {
+            setTruthsUsed((prev) => ({ ...prev, [picked.id]: (prev[picked.id] ?? 0) + 1 }));
+          }
+        } catch (error) {
+          console.error("Error in spin timeout:", error);
+          setSpinning(false);
+          setPhase("spin");
+          setWarning("An error occurred. Please try again.");
+        }
+      }, 3200);
+    } catch (error) {
+      console.error("Error in doSpin:", error);
       setSpinning(false);
-
-      const stage = activeModes[stageIdx] as GameMode ?? "starting";
-      const usedTruths = truthsUsed[picked.id] ?? 0;
-      const allowed = session.rules.truth_count ?? 2;
-      const forceType: "truth" | "dare" = usedTruths < allowed ? "truth" : "dare";
-
-      const sub = await getQuestion(stage, forceType, picked.id);
-      
-      if (!sub) {
-        setWarning("❌ Not enough questions available. Ask everyone to add more.");
-        setPhase("spin");
-        setSpinning(false);
-        return;
-      }
-
-      setTurn({ player: picked, submission: sub, type: sub.type as "truth" | "dare" });
-      setPhase("reveal");
-      setModalOpen(true);
-
-      await supabase.from("players").update({ spin_count: (picked.spin_count ?? 0) + 1 }).eq("id", picked.id);
-      setPlayers((prev) => prev.map((p) => p.id === picked.id ? { ...p, spin_count: (p.spin_count ?? 0) + 1 } : p));
-      
-      if (sub.type === "truth") {
-        setTruthsUsed((prev) => ({ ...prev, [picked.id]: (prev[picked.id] ?? 0) + 1 }));
-      }
-    }, 3200);
+      setWarning("Failed to spin. Please try again.");
+      setTimeout(() => setWarning(null), 2000);
+    }
   }
 
   async function spinBottle() { 
@@ -390,7 +472,7 @@ function TruthOrDareContent() {
   }
 
   if (!session) return (
-    <main className="min-h-screen flex items-center justify-center">
+    <main className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#0a0a0f] to-[#13131f]">
       <div className="animate-spin">
         <RefreshCw size={48} className="text-neon-pink" />
       </div>
@@ -400,7 +482,7 @@ function TruthOrDareContent() {
   const currentStageObj = GAME_MODES.find((m) => m.key === activeModes[stageIdx]) ?? GAME_MODES[0];
 
   return (
-    <main className="min-h-screen flex flex-col items-center px-4 py-8 max-w-sm mx-auto relative overflow-hidden bg-gradient-to-b from-[#0a0a0f] to-[#13131f]">
+    <main className="min-h-screen flex flex-col items-center px-4 py-8 max-w-md mx-auto relative overflow-hidden bg-gradient-to-b from-[#0a0a0f] to-[#13131f]">
       {warning && (
         <div className="fixed top-20 left-4 right-4 z-40 animate-slide-down">
           <div className="bg-yellow-500/90 backdrop-blur-sm text-black px-4 py-3 rounded-xl flex items-center gap-2 shadow-lg">
@@ -410,7 +492,7 @@ function TruthOrDareContent() {
         </div>
       )}
 
-      <div className="w-full flex items-center justify-between mb-6">
+      <div className="w-full flex items-center justify-between mb-4">
         <div>
           <p className="text-xs opacity-40 uppercase tracking-widest">{session.party_name}</p>
           <div className="flex items-center gap-2 mt-1">
@@ -420,25 +502,32 @@ function TruthOrDareContent() {
             </p>
           </div>
         </div>
-        {isHost && (
-          <div className="flex gap-2 items-center">
-            {stageIdx < activeModes.length - 1 && (
-              <button 
-                className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 bg-white/5 hover:bg-white/10 transition-all"
-                onClick={nextStage}
-              >
-                <TrendingUp size={14} />
-                Next Level
+        <div className="flex items-center gap-2">
+          <span className="text-xs bg-white/10 px-2 py-1 rounded-full">
+            <Users size={12} className="inline mr-1" />
+            {players.length}
+          </span>
+          {isHost && (
+            <>
+              {stageIdx < activeModes.length - 1 && (
+                <button 
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 bg-white/5 hover:bg-white/10 transition-all"
+                  onClick={nextStage}
+                >
+                  <TrendingUp size={14} />
+                  Next
+                </button>
+              )}
+              <button className="text-xs opacity-30 hover:opacity-60 px-2 py-1" onClick={endGame}>
+                End
               </button>
-            )}
-            <button className="text-xs opacity-30 hover:opacity-60 px-2 py-1" onClick={endGame}>
-              End Game
-            </button>
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
 
-      <div className="flex gap-2 mb-8">
+      {/* Stage Progress */}
+      <div className="flex gap-1 mb-6 w-full">
         {activeModes.map((m, i) => {
           const mo = GAME_MODES.find((x) => x.key === m)!;
           return (
@@ -447,19 +536,21 @@ function TruthOrDareContent() {
               className="h-1 rounded-full transition-all flex-1"
               style={{
                 background: i <= stageIdx ? mo.color : "rgba(255,255,255,0.1)",
-                boxShadow: i === stageIdx ? `0 0 8px ${mo.color}` : "none",
               }} 
             />
           );
         })}
       </div>
 
-      <div className="relative w-80 h-80 mb-8">
-        {players.map((p, i) => {
-          const angle = (i / players.length) * 360 - 90;
+      {/* Player Circle - Shows only first 12 players with pagination */}
+      <div className="relative w-80 h-80 mb-4">
+        {paginatedPlayers.map((p, idx) => {
+          const globalIndex = players.findIndex(player => player.id === p.id);
+          const angle = (globalIndex / players.length) * 360 - 90;
           const rad = (angle * Math.PI) / 180;
-          const x = 50 + 44 * Math.cos(rad);
-          const y = 50 + 44 * Math.sin(rad);
+          const radius = 44;
+          const x = 50 + radius * Math.cos(rad);
+          const y = 50 + radius * Math.sin(rad);
           const active = currentTurn?.player.id === p.id && modalOpen;
 
           return (
@@ -468,19 +559,20 @@ function TruthOrDareContent() {
               className="absolute transform -translate-x-1/2 -translate-y-1/2 text-center transition-all duration-500"
               style={{ left: `${x}%`, top: `${y}%` }}
             >
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold border-2 transition-all ${
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border-2 transition-all text-sm ${
                 active ? "scale-125 border-neon-pink shadow-lg shadow-neon-pink/50" : "border-white/10"
               }`} style={{ background: active ? "rgba(255,45,120,0.3)" : "rgba(255,255,255,0.05)" }}>
                 {p.name.charAt(0).toUpperCase()}
               </div>
-              <p className={`text-xs mt-1.5 transition-all ${active ? "font-bold" : "opacity-40"}`}
+              <p className={`text-xs mt-1 truncate max-w-[60px] transition-all ${active ? "font-bold" : "opacity-40"}`}
                 style={{ color: active ? "var(--neon-pink)" : undefined }}>
-                {p.name.split(" ")[0]}
+                {p.name.length > 8 ? p.name.slice(0, 6) + '..' : p.name}
               </p>
             </div>
           );
         })}
-
+        
+        {/* Bottle */}
         <div 
           className="absolute inset-0 flex items-center justify-center"
           onClick={phase === "spin" && !spinning && isHost ? spinBottle : undefined}
@@ -498,6 +590,29 @@ function TruthOrDareContent() {
         </div>
       </div>
 
+      {/* Pagination Controls for large player lists */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3 mb-4">
+          <button
+            onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
+            disabled={currentPage === 0}
+            className="p-1 rounded-lg bg-white/5 disabled:opacity-30"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <span className="text-xs opacity-60">
+            {currentPage + 1} / {totalPages}
+          </span>
+          <button
+            onClick={() => setCurrentPage(prev => Math.min(totalPages - 1, prev + 1))}
+            disabled={currentPage === totalPages - 1}
+            className="p-1 rounded-lg bg-white/5 disabled:opacity-30"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
+
       {phase === "spin" && !spinning && (
         <div className="text-center animate-fade-in">
           {isHost ? (
@@ -505,7 +620,7 @@ function TruthOrDareContent() {
               <p className="text-lg font-black mb-2 animate-pulse-glow" style={{ fontFamily: "var(--font-display)", color: "var(--neon-pink)" }}>
                 TAP THE BOTTLE TO SPIN
               </p>
-              <p className="text-xs opacity-40">{players.length} players ready</p>
+              <p className="text-xs opacity-40">{players.length} players in the circle</p>
             </>
           ) : (
             <div className="flex items-center justify-center gap-2">
