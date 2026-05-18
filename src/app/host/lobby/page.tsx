@@ -41,7 +41,7 @@ function HostLobbyContent() {
   const [showRules, setShowRules] = useState(false);
   const [playerToKick, setPlayerToKick] = useState<Player | null>(null);
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://oxa-zeta.vercel.app/";
   const joinUrl = `${appUrl}/join/${code}`;
 
   // Load session and host
