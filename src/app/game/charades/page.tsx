@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from 'react';
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, RefreshCw, Check, X, Clock, Sparkles, Volume2, VolumeX, HelpCircle, Play } from "lucide-react";
@@ -34,7 +35,8 @@ const WORDS_BY_CATEGORY: Record<string, string[]> = {
 
 type GamePhase = "select" | "countdown" | "reveal" | "active" | "done";
 
-export default function CharadesPage() {
+// Inner component that uses all hooks
+function CharadesContent() {
   const router = useRouter();
   const [phase, setPhase] = useState<GamePhase>("select");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -311,12 +313,12 @@ export default function CharadesPage() {
             <h3 className="text-xl font-bold mb-4 text-neon-cyan">How to Play</h3>
             <div className="space-y-3 text-sm">
               <p>1. 🎭 Pick a category</p>
-              <p>2. ⏱️ Get ready - 3 second countdown</p>
+              <p>2. ⏱️ Choose time limit</p>
               <p>3. 📜 Word appears on the paper</p>
-              <p>4. 🎬 Act it out without speaking or sounds</p>
-              <p>5. ✅ Click Correct when guessed right → New word appears</p>
-              <p>6. ⏩ Skip if it's too hard → New word appears</p>
-              <p>7. ⏰ When time runs out, click Next Round</p>
+              <p>4. 🎬 Act it out without speaking</p>
+              <p>5. ✅ Click CORRECT when guessed → +1 point</p>
+              <p>6. ⏩ Click SKIP to get a new word</p>
+              <p>7. 🏆 Try to get as many points as possible before time runs out!</p>
             </div>
             <button
               onClick={() => setShowInstructions(false)}
@@ -338,8 +340,9 @@ export default function CharadesPage() {
             
             {/* Time selector */}
             <div className="mt-4 flex items-center justify-center gap-3">
-              <span className="text-xs opacity-60">Round time:</span>
-              {[30, 45, 60, 90, 120].map((sec) => (
+              <Clock size={14} className="opacity-60" />
+              <span className="text-xs opacity-60">Time limit:</span>
+              {[30, 45, 60, 90].map((sec) => (
                 <button
                   key={sec}
                   onClick={() => changeRoundTime(sec)}
@@ -353,6 +356,7 @@ export default function CharadesPage() {
                 </button>
               ))}
             </div>
+            <p className="text-xs opacity-40 mt-3">⚡ Guess as many words as possible before time runs out!</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -391,12 +395,12 @@ export default function CharadesPage() {
           {/* Score and Timer */}
           <div className="flex justify-between items-center mb-6">
             <div className="bg-white/5 px-4 py-2 rounded-full">
-              <span className="text-sm opacity-60">Team Score: </span>
+              <span className="text-sm opacity-60">Score: </span>
               <span className="text-2xl font-bold text-neon-pink">{teamScore}</span>
             </div>
             <div className="bg-white/5 px-3 py-2 rounded-full">
-              <span className="text-xs opacity-60">Round: </span>
-              <span className="text-sm font-bold">{roundsPlayed + 1}</span>
+              <span className="text-xs opacity-60">Words/sec: </span>
+              <span className="text-sm font-bold">{(teamScore / (roundTime - timeLeft || 1)).toFixed(1)}</span>
             </div>
             {phase === "active" && (
               <div className="relative">
@@ -518,7 +522,7 @@ export default function CharadesPage() {
                 className="flex-1 py-3 rounded-xl bg-gradient-to-r from-neon-green to-emerald-600 font-bold flex items-center justify-center gap-2 transition-all hover:scale-105"
               >
                 <Check size={18} />
-                Correct!
+                Correct! +1
               </button>
             </div>
           )}
@@ -527,14 +531,15 @@ export default function CharadesPage() {
             <div className="text-center mt-6">
               <div className="text-6xl mb-3">⏰</div>
               <p className="text-lg mb-2">Time's up!</p>
-              <p className="text-sm opacity-60 mb-4">Team scored {teamScore} point{teamScore !== 1 ? "s" : ""} this round</p>
+              <p className="text-2xl font-bold text-neon-pink mb-2">{teamScore} points!</p>
+              <p className="text-sm opacity-60 mb-4">You guessed {teamScore} word{teamScore !== 1 ? "s" : ""} in {roundTime} seconds</p>
               
               <button
                 onClick={startNewRound}
                 className="btn-neon btn-pink w-full py-4 flex items-center justify-center gap-2"
               >
                 <Play size={18} />
-                Next Round
+                Play Again
               </button>
               
               <button
@@ -554,7 +559,7 @@ export default function CharadesPage() {
         <div className="mt-4 text-center">
           <div className="inline-flex items-center gap-2 text-xs opacity-40">
             <Sparkles size={12} />
-            <span>Click Correct when guessed → New word appears!</span>
+            <span>Click CORRECT when guessed → +1 point & new word!</span>
             <Sparkles size={12} />
           </div>
         </div>
@@ -594,4 +599,25 @@ style.textContent = `
     animation: bounce 1s ease-in-out infinite;
   }
 `;
-document.head.appendChild(style);
+
+// Only add style if not already added
+if (typeof document !== 'undefined' && !document.querySelector('#charades-styles')) {
+  style.id = 'charades-styles';
+  document.head.appendChild(style);
+}
+
+// Main export with Suspense boundary
+export default function CharadesPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#0a0a0f] to-[#13131f]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-neon-pink mx-auto"></div>
+          <p className="mt-4 text-gray-400">Loading game...</p>
+        </div>
+      </div>
+    }>
+      <CharadesContent />
+    </Suspense>
+  );
+}
