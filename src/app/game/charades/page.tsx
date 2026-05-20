@@ -759,7 +759,7 @@ function CharadesContent() {
             <div className="mt-5 flex items-center justify-center gap-2">
               <Clock size={14} />
 
-              {[30, 45, 60, 90].map((sec) => (
+              {[30, 45, 60, 90, 120, 150, 180,].map((sec) => (
                 <button
                   key={sec}
                   onClick={() =>
